@@ -1,0 +1,19 @@
+# 1. Update Termux
+pkg update && pkg upgrade -y
+
+# 2. Install Ubuntu proot (full Linux environment, easier for PyTorch)
+pkg install proot-distro -y
+proot-distro install ubuntu
+proot-distro login ubuntu
+
+# Inside Ubuntu now:
+apt update && apt install -y python3-pip python3-venv git wget curl build-essential
+
+# 3. Install PyTorch CPU-only (this takes ~20 mins on mobile)
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# 4. Install other deps
+pip3 install flask pandas numpy yfinance tqdm tiktoken matplotlib
+
+# 5. Create workspace
+mkdir -p ~/autoresearch-trading && cd ~/autoresearch-trading

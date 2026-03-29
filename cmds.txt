@@ -1,0 +1,18 @@
+# Terminal 1: Setup & Data
+cd ~/autoresearch-trading
+python3 prepare.py
+
+# Terminal 2: Start Dashboard (keep running)
+python3 dashboard.py
+# Open phone browser → http://localhost:5000
+
+# Terminal 3: Run Autoresearch Loop
+# Copy-paste this to your AI agent (Claude/Codex):
+"""
+I am running autoresearch-trading on Android. 
+Read program.md for instructions.
+Current mode is: llm
+Check results/ folder for history.
+Let's run experiment 1 - check the setup and suggest first improvement.
+Then run: python3 train.py
+"""
