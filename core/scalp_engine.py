@@ -159,15 +159,15 @@ class ScalpBacktester:
         self.max_leverage = max_leverage
         self.loader = BinanceDataLoader(symbols=self.symbols, interval=interval)
     
-    def run(self, strategy_code: str, split: str = "train") -> ScalpResult:
+    def run(self, strategy_or_code, split: str = "train", params: dict = None) -> ScalpResult:
         """
-        Run a backtest with the given strategy code.
+        Run a backtest with a strategy object or code string.
         
-        The strategy must implement:
-            class ScalpStrategy:
-                def __init__(self): ...
-                def on_bar(self, bar: ScalpBar, position: Optional[ScalpPosition],
-                          equity: float) -> ScalpSignal: ...
+        Args:
+            strategy_or_code: Either a strategy object with on_bar(), 
+                             a code string, or None (uses params).
+            split: Data split to use.
+            params: If provided, creates a parametric ScalpStrategy.
         """
         t_start = time.time()
         
@@ -184,7 +184,15 @@ class ScalpBacktester:
         
         # Load strategy
         try:
-            strategy = self._load_strategy(strategy_code)
+            if params is not None:
+                from .scalp_strategy import ScalpStrategy as ParametricStrategy
+                strategy = ParametricStrategy(params)
+            elif isinstance(strategy_or_code, str) and strategy_or_code:
+                strategy = self._load_strategy(strategy_or_code)
+            elif hasattr(strategy_or_code, 'on_bar'):
+                strategy = strategy_or_code
+            else:
+                return ScalpResult(score=-999)
         except Exception as e:
             return ScalpResult(score=-999, 
                              trade_log=[{"error": f"Strategy load error: {e}"}])

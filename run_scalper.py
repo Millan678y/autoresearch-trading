@@ -171,12 +171,14 @@ def _random_param(param_range):
     return round(random.uniform(lo, hi), 6)
 
 
+ALL_SCALP_SIGNAL_NAMES = list(SCALP_SIGNALS.keys()) + ["macd_fast", "bb_squeeze", "obv_trend"]
+
 def generate_scalp_strategy() -> dict:
-    """Generate a random scalping strategy with code and params."""
+    """Generate a random scalping strategy config (no code generation)."""
     
     # Pick 3-6 signals
-    n_signals = random.randint(3, min(6, len(SCALP_SIGNALS)))
-    chosen = random.sample(list(SCALP_SIGNALS.keys()), n_signals)
+    n_signals = random.randint(3, min(6, len(ALL_SCALP_SIGNAL_NAMES)))
+    chosen = random.sample(ALL_SCALP_SIGNAL_NAMES, n_signals)
     
     # Generate params
     params = {}
@@ -199,81 +201,13 @@ def generate_scalp_strategy() -> dict:
         "size_pct": size_pct,
     })
     
-    # Build signal code — each signal indented at method level
-    signal_lines = []
-    signal_lines.append("        bull_votes = 0")
-    signal_lines.append("        bear_votes = 0")
-    
-    for i, sig in enumerate(chosen):
-        code = SCALP_SIGNALS[sig]["code"]
-        for p_name in SCALP_SIGNALS[sig]["params"]:
-            key = f"{sig}__{p_name}"
-            if key in params:
-                code = code.replace("{" + p_name + "}", str(params[key]))
-        
-        signal_lines.append(f"        # Signal: {sig}")
-        # Ensure each line is properly indented
-        for line in code.strip().split("\n"):
-            stripped = line.strip()
-            if stripped:
-                signal_lines.append(f"        {stripped}")
-        signal_lines.append(f"        if s_bull: bull_votes += 1")
-        signal_lines.append(f"        if s_bear: bear_votes += 1")
-    
-    signal_block = "\n".join(signal_lines)
-    
     max_hold = random.randint(24, 144)
     
-    # Build full strategy code using string concatenation (not f-string, avoids brace issues)
-    strategy_code = (
-        '"""\nAuto-generated scalping strategy.\n"""\n'
-        'import numpy as np\n'
-        'from core.scalp_engine import ScalpSignal\n\n'
-        'class ScalpStrategy:\n'
-        '    def __init__(self):\n'
-        '        self.bar_count = 0\n'
-        '        self.last_trade_bar = -999\n\n'
-        '    def on_bar(self, bar, position, equity):\n'
-        '        self.bar_count += 1\n'
-        '        h = bar.history\n\n'
-        '        if len(h) < 50:\n'
-        '            return ScalpSignal(symbol=bar.symbol, action="none")\n\n'
-        '        if self.bar_count - self.last_trade_bar < ' + str(cooldown) + ':\n'
-        '            if position is None:\n'
-        '                return ScalpSignal(symbol=bar.symbol, action="none")\n\n'
-        '        closes = h["close"].values.astype(float)\n'
-        '        highs = h["high"].values.astype(float)\n'
-        '        lows = h["low"].values.astype(float)\n\n'
-        + signal_block + '\n\n'
-        '        if position is not None:\n'
-        '            bars_held = self.bar_count - position.entry_bar\n'
-        '            if bars_held > ' + str(max_hold) + ':\n'
-        '                return ScalpSignal(symbol=bar.symbol, action="close", reason="max_hold")\n'
-        '            return ScalpSignal(symbol=bar.symbol, action="none")\n\n'
-        '        # Entry\n'
-        '        if len(closes) < 14:\n'
-        '            return ScalpSignal(symbol=bar.symbol, action="none")\n'
-        '        atr = np.mean(highs[-12:] - lows[-12:])\n'
-        '        if atr <= 0:\n'
-        '            atr = abs(closes[-1]) * 0.001\n\n'
-        '        if bull_votes >= ' + str(min_votes) + ':\n'
-        '            self.last_trade_bar = self.bar_count\n'
-        '            return ScalpSignal(\n'
-        '                symbol=bar.symbol, action="long", size_pct=' + str(size_pct) + ',\n'
-        '                take_profit=bar.close + atr * ' + str(tp_mult) + ',\n'
-        '                stop_loss=bar.close - atr * ' + str(sl_mult) + ',\n'
-        '                reason="bull_signal"\n'
-        '            )\n'
-        '        elif bear_votes >= ' + str(min_votes) + ':\n'
-        '            self.last_trade_bar = self.bar_count\n'
-        '            return ScalpSignal(\n'
-        '                symbol=bar.symbol, action="short", size_pct=' + str(size_pct) + ',\n'
-        '                take_profit=bar.close - atr * ' + str(tp_mult) + ',\n'
-        '                stop_loss=bar.close + atr * ' + str(sl_mult) + ',\n'
-        '                reason="bear_signal"\n'
-        '            )\n\n'
-        '        return ScalpSignal(symbol=bar.symbol, action="none")\n'
-    )
+    params["signals"] = chosen
+    params["max_hold"] = max_hold
+    
+    # No code generation — strategy is parametric
+    strategy_code = ""  # Not used anymore
     
     sid = hashlib.sha256(strategy_code.encode()).hexdigest()[:12]
     
@@ -352,8 +286,8 @@ class ScalpOrchestrator:
             print(f"  [{i+1}/{self.batch_size}] {strat['name']}")
             print(f"    Signals: {', '.join(strat['signals'])}")
             
-            # In-sample test
-            is_result = self.backtester.run(strat["code"], split="train")
+            # In-sample test (using params, not code)
+            is_result = self.backtester.run(None, split="train", params=strat["params"])
             
             if is_result.score <= 0:
                 print(f"    ❌ IS failed: score={is_result.score:.2f} "
@@ -365,7 +299,7 @@ class ScalpOrchestrator:
                   f"trades={is_result.num_trades} wr={is_result.win_rate_pct:.0f}%")
             
             # Out-of-sample test
-            oos_result = self.backtester.run(strat["code"], split="val")
+            oos_result = self.backtester.run(None, split="val", params=strat["params"])
             
             if oos_result.score <= 0:
                 print(f"    ❌ OOS failed: score={oos_result.score:.2f}")
