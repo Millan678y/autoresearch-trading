@@ -1,11 +1,18 @@
 """
-ORCHESTRATOR — The Main Loop
+ORCHESTRATOR — The Main Loop (v2)
 
 Ties everything together:
-Genesis → Backtest → Darwin → Heal → Repeat
+Genesis → Backtest → Darwin → Heal → Learn → Repeat
 
 Runs autonomously. Generates strategies, tests them, keeps winners,
-kills losers, heals broken ones, evolves the population.
+kills losers, heals broken ones, learns from history, evolves.
+
+v2 additions:
+- Continuous learning integration (guided generation)
+- News sentiment + macro context awareness
+- Portfolio-level risk management
+- XAU/USD + BTC/USD dual-asset support
+- Learning reports every N generations
 """
 
 import time
@@ -22,6 +29,8 @@ from .models import (
 from .genesis import generate_batch, generate_random, mutate_strategy
 from .darwin import evaluate_strategy, get_leaderboard, get_statistics, generate_kill_report
 from .healer import heal_strategy, detect_overfit, fix_overfit
+from .learner import compile_insights, get_generation_hints, print_learning_report
+from .risk_manager import PortfolioRiskManager, RiskConfig
 
 
 class Orchestrator:
@@ -60,6 +69,9 @@ class Orchestrator:
         self.best_strategy_id = None
         self.running = True
         self.start_time = 0
+        self.learning_interval = 5  # Run learning every N generations
+        self.risk_manager = PortfolioRiskManager(RiskConfig())
+        self.generation_hints = {}
         
         # Graceful shutdown
         signal.signal(signal.SIGINT, self._shutdown)
@@ -86,7 +98,24 @@ class Orchestrator:
         
         while self.running and self.generation < self.max_generations:
             self.generation += 1
+            
+            # Periodically compile learnings and get hints
+            if self.generation % self.learning_interval == 1 or self.generation == 1:
+                try:
+                    self.generation_hints = get_generation_hints()
+                    if self.generation_hints.get("hints"):
+                        print(f"\n🧠 Learning hints: {'; '.join(self.generation_hints['hints'][:3])}")
+                except Exception:
+                    self.generation_hints = {}
+            
             self._run_generation()
+            
+            # Periodic learning report
+            if self.generation % (self.learning_interval * 2) == 0:
+                try:
+                    print_learning_report()
+                except Exception:
+                    pass
             
             # Adaptive mutation: if no improvement in 5 generations, explore more
             if self.adaptive_intensity:
