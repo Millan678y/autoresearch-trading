@@ -40,48 +40,66 @@ from core.learner import compile_insights, get_generation_hints
 # Scalp-Specific Signal Library
 # ─────────────────────────────────────────────────────────────────
 
-# ── EVENT-BASED SIGNALS (v2) ──────────────────────────────────
-# Each signal fires on ~2-8% of bars (crossovers, breakouts, reversals)
-# NOT state-based ("is EMA above?") which fires 50% of the time.
+# ── INSTITUTIONAL SIGNALS (v3) — Chart Fanatics ──────────────
+# Based on 33 verified trader strategies from chartfanatics.com
+# Each signal fires on ~1-5% of bars (events, not states).
 SCALP_SIGNALS = {
-    "ema_cross": {
-        "params": {"fast": (5, 12), "slow": (15, 50)},
+    # Tier 1: Core institutional concepts
+    "liquidity_sweep": {
+        "params": {"lookback": (24, 72), "wick_ratio": (0.5, 0.75)},
     },
-    "rsi_scalp": {
-        "params": {"period": (6, 14), "oversold": (25, 35), "overbought": (65, 75)},
+    "break_retest": {
+        "params": {"lookback": (24, 72), "retest_window": (6, 18)},
+    },
+    "mean_reversion": {
+        "params": {"consec_bars": (4, 7), "speed_pct": (0.02, 0.05)},
+    },
+    "amd_model": {
+        "params": {"range_bars": (18, 48), "manip_pct": (0.001, 0.005)},
+    },
+    "volume_node": {
+        "params": {"lookback": (36, 72), "bins": (15, 30)},
+    },
+    "equilibrium_50": {
+        "params": {"lookback": (36, 72), "zone_pct": (0.03, 0.08)},
+    },
+    # Tier 2: Session + trend
+    "session_killzone": {
+        "params": {"min_move": (0.001, 0.004)},
+    },
+    "ema_stack": {
+        "params": {"fast": (4, 7), "mid1": (8, 11), "mid2": (12, 15), "slow": (18, 25)},
+    },
+    "regime_filter": {
+        "params": {"period": (15, 25), "std": (1.8, 2.5)},
+    },
+    "fvg": {
+        "params": {"min_gap_pct": (0.001, 0.004)},
+    },
+    # Tier 3: Classic confirmations
+    "engulfing": {
+        "params": {},
+    },
+    "wick_rejection": {
+        "params": {"min_ratio": (1.5, 3.0)},
+    },
+    "vwap_reclaim": {
+        "params": {},
+    },
+    "range_breakout": {
+        "params": {"period": (12, 48)},
+    },
+    "smt_divergence": {
+        "params": {"lookback": (8, 20)},
     },
     "macd_cross": {
         "params": {"fast": (8, 14), "slow": (20, 30), "signal": (6, 12)},
     },
-    "bb_breakout": {
-        "params": {"period": (15, 25), "std": (1.8, 2.5)},
+    "rsi_reversal": {
+        "params": {"period": (6, 14), "oversold": (25, 35), "overbought": (65, 75)},
     },
-    "vol_breakout": {
-        "params": {"mult": (2.0, 4.0), "min_move": (0.002, 0.006)},
-    },
-    "engulfing": {
-        "params": {},
-    },
-    "support_resist": {
-        "params": {"lookback": (24, 72), "margin": (0.001, 0.005)},
-    },
-    "momentum_shift": {
-        "params": {"fast": (3, 8), "slow": (10, 25)},
-    },
-    "vwap_cross": {
-        "params": {},
-    },
-    "session_open": {
-        "params": {"min_move": (0.001, 0.004)},
-    },
-    "range_break": {
-        "params": {"period": (12, 48)},
-    },
-    "obv_divergence": {
-        "params": {"lookback": (12, 36)},
-    },
-    "wick_rejection": {
-        "params": {"min_ratio": (1.5, 3.0)},
+    "ema_cross": {
+        "params": {"fast": (5, 12), "slow": (15, 50)},
     },
 }
 
