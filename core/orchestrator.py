@@ -271,6 +271,19 @@ class Orchestrator:
         with open(os.path.join(best_dir, "best_report.txt"), "w") as f:
             f.write(report)
         
+        # Save MQL5 Expert Advisor
+        try:
+            from .mql5_converter import convert_to_mql5
+            mql5_code = convert_to_mql5(rec, mode="auto")
+            mql5_dir = os.path.join(os.path.dirname(best_dir), "mql5_experts")
+            os.makedirs(mql5_dir, exist_ok=True)
+            mql5_path = os.path.join(mql5_dir, f"best_{rec.name[:30]}.mq5")
+            with open(mql5_path, "w") as f:
+                f.write(mql5_code)
+            print(f"    📄 MQL5 EA saved: {mql5_path}")
+        except Exception as e:
+            print(f"    ⚠️  MQL5 export failed: {e}")
+        
         # Save params
         with open(os.path.join(best_dir, "best_params.json"), "w") as f:
             json.dump({
@@ -325,6 +338,15 @@ class Orchestrator:
             print(f"\n🏆 Best: {stats['best_strategy']['name']} "
                   f"(Score: {stats['best_strategy']['score']:.3f}, "
                   f"Sharpe: {stats['best_strategy']['sharpe']:.3f})")
+        
+        # Auto-export surviving strategies to MQL5
+        if self.total_survived > 0:
+            print(f"\n🔄 Exporting top strategies to MQL5 Expert Advisors...")
+            try:
+                from .mql5_converter import export_top_strategies
+                export_top_strategies(output_dir="mql5_experts", top_n=10, mode="auto")
+            except Exception as e:
+                print(f"  MQL5 export error: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────

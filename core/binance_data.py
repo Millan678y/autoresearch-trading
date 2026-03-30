@@ -42,10 +42,12 @@ CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "autotrader", "binan
 SCALP_SYMBOLS = ["BTCUSDT", "ETHUSDT", "XAUUSDT", "SOLUSDT"]
 
 # Time splits for backtesting
+# In-sample: Full year 2024 (backtest)
+# Out-of-sample: 2025 data (forward test)
 SPLITS = {
-    "train": ("2024-01-01", "2024-09-30"),   # 9 months in-sample
-    "val":   ("2024-10-01", "2025-01-31"),   # 4 months out-of-sample
-    "test":  ("2025-02-01", "2025-06-30"),   # 5 months forward test
+    "train": ("2024-01-01", "2024-12-31"),   # Full 2024 — in-sample backtest
+    "val":   ("2025-01-01", "2025-06-30"),   # H1 2025 — out-of-sample forward test
+    "test":  ("2025-07-01", "2025-12-31"),   # H2 2025 — final validation
 }
 
 # Binance interval constants (ms per candle)

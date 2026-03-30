@@ -446,6 +446,15 @@ class ScalpOrchestrator:
                 print(f"  {i+1}. {s['name'][:30]} | OOS={s.get('oos_score',0):.3f} "
                       f"Sharpe={s.get('oos_sharpe',0):.2f} "
                       f"DD={s.get('oos_max_dd_pct',0):.1f}%")
+        
+        # Auto-export to MQL5
+        if self.total_survived > 0:
+            print(f"\n🔄 Exporting top strategies to MQL5...")
+            try:
+                from core.mql5_converter import export_top_strategies
+                export_top_strategies(output_dir="mql5_experts", top_n=10, mode="scalp")
+            except Exception as e:
+                print(f"  MQL5 export error: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────
