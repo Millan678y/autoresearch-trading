@@ -40,120 +40,48 @@ from core.learner import compile_insights, get_generation_hints
 # Scalp-Specific Signal Library
 # ─────────────────────────────────────────────────────────────────
 
+# ── EVENT-BASED SIGNALS (v2) ──────────────────────────────────
+# Each signal fires on ~2-8% of bars (crossovers, breakouts, reversals)
+# NOT state-based ("is EMA above?") which fires 50% of the time.
 SCALP_SIGNALS = {
     "ema_cross": {
-        "code": """
-        ema_f = h["ema_{fast}"].iloc[-1] if "ema_{fast}" in h.columns else np.mean(closes[-{fast}:])
-        ema_s = h["ema_{slow}"].iloc[-1] if "ema_{slow}" in h.columns else np.mean(closes[-{slow}:])
-        s_bull = ema_f > ema_s
-        s_bear = ema_f < ema_s""",
         "params": {"fast": (5, 12), "slow": (15, 50)},
     },
     "rsi_scalp": {
-        "code": """
-        rsi_col = "rsi_{period}"
-        if rsi_col in h.columns:
-            rsi_val = h[rsi_col].iloc[-1]
-        else:
-            delta = np.diff(closes[-{period}-1:])
-            gains = np.where(delta > 0, delta, 0).mean()
-            losses = np.where(delta < 0, -delta, 0).mean()
-            rsi_val = 100 - 100 / (1 + gains / max(losses, 1e-10))
-        s_bull = rsi_val > {bull_thresh} and rsi_val < 70
-        s_bear = rsi_val < {bear_thresh} and rsi_val > 30""",
-        "params": {"period": (6, 14), "bull_thresh": (48, 58), "bear_thresh": (42, 52)},
+        "params": {"period": (6, 14), "oversold": (25, 35), "overbought": (65, 75)},
     },
-    "micro_momentum": {
-        "code": """
-        ret = (closes[-1] - closes[-{lookback}]) / closes[-{lookback}]
-        s_bull = ret > {threshold}
-        s_bear = ret < -{threshold}""",
-        "params": {"lookback": (2, 12), "threshold": (0.001, 0.005)},
+    "macd_cross": {
+        "params": {"fast": (8, 14), "slow": (20, 30), "signal": (6, 12)},
     },
-    "taker_imbalance": {
-        "code": """
-        taker = bar.taker_buy_ratio
-        s_bull = taker > {bull_thresh}
-        s_bear = taker < {bear_thresh}""",
-        "params": {"bull_thresh": (0.55, 0.70), "bear_thresh": (0.30, 0.45)},
+    "bb_breakout": {
+        "params": {"period": (15, 25), "std": (1.8, 2.5)},
     },
-    "vol_spike": {
-        "code": """
-        if "vol_spike" in h.columns:
-            vs = h["vol_spike"].iloc[-1]
-        else:
-            vs = bar.volume / max(np.mean(h["volume"].values[-12:]), 1)
-        speed = (closes[-1] - closes[-3]) / closes[-3]
-        s_bull = vs > {thresh} and speed > 0
-        s_bear = vs > {thresh} and speed < 0""",
-        "params": {"thresh": (1.5, 3.0)},
+    "vol_breakout": {
+        "params": {"mult": (2.0, 4.0), "min_move": (0.002, 0.006)},
     },
-    "vwap_position": {
-        "code": """
-        if "price_vs_vwap" in h.columns:
-            pvw = h["price_vs_vwap"].iloc[-1]
-        else:
-            pvw = 0
-        s_bull = pvw > {bull_thresh}
-        s_bear = pvw < {bear_thresh}""",
-        "params": {"bull_thresh": (0.0005, 0.003), "bear_thresh": (-0.003, -0.0005)},
-    },
-    "candle_body": {
-        "code": """
-        if "body_ratio" in h.columns:
-            br = h["body_ratio"].iloc[-1]
-        else:
-            rng = bar.high - bar.low
-            br = abs(bar.close - bar.open) / max(rng, 1e-10)
-        bullish_candle = bar.close > bar.open
-        s_bull = br > {min_body} and bullish_candle
-        s_bear = br > {min_body} and not bullish_candle""",
-        "params": {"min_body": (0.5, 0.8)},
-    },
-    "price_position": {
-        "code": """
-        col = "price_pos_{lookback}"
-        if col in h.columns:
-            pp = h[col].iloc[-1]
-        else:
-            rh = np.max(highs[-{lookback}:])
-            rl = np.min(lows[-{lookback}:])
-            pp = (closes[-1] - rl) / max(rh - rl, 1e-10)
-        s_bull = pp < {oversold}
-        s_bear = pp > {overbought}""",
-        "params": {"lookback": (12, 72), "oversold": (0.15, 0.35), "overbought": (0.65, 0.85)},
-    },
-    "speed_acceleration": {
-        "code": """
-        if "acceleration" in h.columns:
-            acc = h["acceleration"].iloc[-1]
-        else:
-            speed_now = (closes[-1] - closes[-4]) / 3
-            speed_prev = (closes[-4] - closes[-7]) / 3
-            acc = speed_now - speed_prev
-        s_bull = acc > {threshold}
-        s_bear = acc < -{threshold}""",
-        "params": {"threshold": (0.0001, 0.001)},
-    },
-    "session_filter": {
-        "code": """
-        good_session = bar.session in ("london", "ny")
-        s_bull = good_session and closes[-1] > closes[-3]
-        s_bear = good_session and closes[-1] < closes[-3]""",
+    "engulfing": {
         "params": {},
     },
-    "microvol_regime": {
-        "code": """
-        if "microvol_ratio" in h.columns:
-            mvr = h["microvol_ratio"].iloc[-1]
-        else:
-            mv6 = np.std(np.diff(closes[-7:])) if len(closes) > 7 else 0.01
-            mv12 = np.std(np.diff(closes[-13:])) if len(closes) > 13 else 0.01
-            mvr = mv6 / max(mv12, 1e-10)
-        expanding = mvr > {expand_thresh}
-        s_bull = expanding and closes[-1] > closes[-2]
-        s_bear = expanding and closes[-1] < closes[-2]""",
-        "params": {"expand_thresh": (1.1, 2.0)},
+    "support_resist": {
+        "params": {"lookback": (24, 72), "margin": (0.001, 0.005)},
+    },
+    "momentum_shift": {
+        "params": {"fast": (3, 8), "slow": (10, 25)},
+    },
+    "vwap_cross": {
+        "params": {},
+    },
+    "session_open": {
+        "params": {"min_move": (0.001, 0.004)},
+    },
+    "range_break": {
+        "params": {"period": (12, 48)},
+    },
+    "obv_divergence": {
+        "params": {"lookback": (12, 36)},
+    },
+    "wick_rejection": {
+        "params": {"min_ratio": (1.5, 3.0)},
     },
 }
 
@@ -170,19 +98,6 @@ def _random_param(param_range):
         return random.randint(lo, hi)
     return round(random.uniform(lo, hi), 6)
 
-
-SCALP_SIGNALS["macd_fast"] = {
-    "code": "",
-    "params": {"fast": (8, 14), "slow": (16, 26), "signal": (5, 9)},
-}
-SCALP_SIGNALS["bb_squeeze"] = {
-    "code": "",
-    "params": {"period": (10, 20)},
-}
-SCALP_SIGNALS["obv_trend"] = {
-    "code": "",
-    "params": {"period": (10, 25)},
-}
 
 ALL_SCALP_SIGNAL_NAMES = list(SCALP_SIGNALS.keys())
 
@@ -213,12 +128,12 @@ def generate_scalp_strategy(hints: dict = None) -> dict:
         for p_name, p_range in SCALP_SIGNALS[sig]["params"].items():
             params[f"{sig}__{p_name}"] = _random_param(p_range)
     
-    # Strategy-level params — require majority consensus to reduce overtrading
-    min_votes = random.randint(max(2, n_signals // 2), max(2, n_signals - 1))
-    cooldown = random.randint(6, 24)  # Wait 30min-2hr between trades
+    # Strategy-level params — event signals are rare, so 2 votes is enough
+    min_votes = random.randint(2, min(3, n_signals - 1))
+    cooldown = random.randint(6, 36)  # Wait 30min-3hr between trades
     tp_mult = round(random.uniform(1.5, 4.0), 2)  # Higher TP for better RR
     sl_mult = round(random.uniform(0.8, 2.0), 2)   # Tighter SL
-    size_pct = round(random.uniform(0.1, 0.4), 2)  # Smaller positions
+    size_pct = round(random.uniform(0.05, 0.25), 2)  # Small positions, protect capital
     
     params.update({
         "min_votes": min_votes,
