@@ -119,6 +119,107 @@ def _random_param(param_range):
 
 ALL_SCALP_SIGNAL_NAMES = list(SCALP_SIGNALS.keys())
 
+# ─────────────────────────────────────────────────────────────────
+# MUTATION & CROSSOVER — Evolve from best strategies
+# ─────────────────────────────────────────────────────────────────
+
+def mutate_strategy(parent_params: dict, mutation_rate: float = 0.3) -> dict:
+    """Mutate a parent strategy's params slightly."""
+    params = dict(parent_params)
+    signals = list(params.get("signals", []))
+    
+    # Maybe swap one signal
+    if random.random() < mutation_rate and len(signals) >= 2:
+        idx = random.randint(0, len(signals) - 1)
+        available = [s for s in ALL_SCALP_SIGNAL_NAMES if s not in signals]
+        if available:
+            signals[idx] = random.choice(available)
+            params["signals"] = signals
+    
+    # Mutate numeric params by ±20%
+    for key, val in list(params.items()):
+        if key in ("signals", "min_votes"):
+            continue
+        if isinstance(val, (int, float)) and random.random() < mutation_rate:
+            noise = random.uniform(0.8, 1.2)
+            new_val = val * noise
+            if isinstance(val, int):
+                new_val = max(1, int(new_val))
+            else:
+                new_val = round(new_val, 6)
+            params[key] = new_val
+    
+    # Rebuild signals-specific params for any new signals
+    for sig in params.get("signals", []):
+        if sig in SCALP_SIGNALS:
+            for p_name, p_range in SCALP_SIGNALS[sig]["params"].items():
+                full_key = f"{sig}__{p_name}"
+                if full_key not in params:
+                    params[full_key] = _random_param(p_range)
+    
+    # Regenerate ID
+    param_str = json.dumps(params, sort_keys=True)
+    sid = hashlib.sha256(param_str.encode()).hexdigest()[:12]
+    signals = params.get("signals", [])
+    
+    return {
+        "id": sid,
+        "name": f"mut_{'_'.join(s[:3] for s in signals)}_{sid[:6]}",
+        "code": "",
+        "params": params,
+        "signals": signals,
+    }
+
+
+def crossover_strategies(parent_a: dict, parent_b: dict) -> dict:
+    """Cross two parent strategies to create a child."""
+    sig_a = parent_a.get("signals", [])
+    sig_b = parent_b.get("signals", [])
+    
+    # Take some signals from each parent
+    n = random.randint(2, min(5, len(sig_a) + len(sig_b)))
+    combined = list(set(sig_a + sig_b))
+    random.shuffle(combined)
+    child_signals = combined[:n]
+    
+    # Mix params — prefer parent_a for shared params
+    params = {}
+    for sig in child_signals:
+        if sig in SCALP_SIGNALS:
+            for p_name, p_range in SCALP_SIGNALS[sig]["params"].items():
+                full_key = f"{sig}__{p_name}"
+                if full_key in parent_a:
+                    params[full_key] = parent_a[full_key]
+                elif full_key in parent_b:
+                    params[full_key] = parent_b[full_key]
+                else:
+                    params[full_key] = _random_param(p_range)
+    
+    # Strategy-level params: average of parents
+    for key in ("min_votes", "cooldown", "tp_mult", "sl_mult", "size_pct", "max_hold"):
+        a_val = parent_a.get(key, parent_b.get(key, 2))
+        b_val = parent_b.get(key, parent_a.get(key, 2))
+        if isinstance(a_val, int):
+            params[key] = (a_val + b_val) // 2
+        else:
+            params[key] = round((a_val + b_val) / 2, 4)
+    
+    params["signals"] = child_signals
+    params["min_votes"] = min(params.get("min_votes", 2), len(child_signals) - 1)
+    params["min_votes"] = max(2, params["min_votes"])
+    
+    param_str = json.dumps(params, sort_keys=True)
+    sid = hashlib.sha256(param_str.encode()).hexdigest()[:12]
+    
+    return {
+        "id": sid,
+        "name": f"xov_{'_'.join(s[:3] for s in child_signals)}_{sid[:6]}",
+        "code": "",
+        "params": params,
+        "signals": child_signals,
+    }
+
+
 def generate_scalp_strategy(hints: dict = None) -> dict:
     """Generate a scalping strategy config, guided by past learnings if available."""
     
@@ -225,6 +326,8 @@ class ScalpOrchestrator:
         print("\n🚀 Starting autonomous loop...\n")
         
         self.hints = {}
+        self.elite_pool = []  # Top strategies for mutation/crossover
+        self.all_tested = []  # Track all tested for learning
         
         while self.running and self.generation < self.max_generations:
             self.generation += 1
@@ -255,7 +358,21 @@ class ScalpOrchestrator:
             if not self.running:
                 break
             
-            strat = generate_scalp_strategy(hints=self.hints)
+            # Strategy creation: 40% random, 30% mutation, 30% crossover
+            strat = None
+            if self.elite_pool and random.random() < 0.6:
+                if random.random() < 0.5 and len(self.elite_pool) >= 2:
+                    # Crossover from two elite parents
+                    parents = random.sample(self.elite_pool, 2)
+                    strat = crossover_strategies(parents[0]["params"], parents[1]["params"])
+                else:
+                    # Mutate a random elite
+                    parent = random.choice(self.elite_pool)
+                    strat = mutate_strategy(parent["params"])
+            
+            if strat is None:
+                strat = generate_scalp_strategy(hints=self.hints)
+            
             self.total_tested += 1
             
             print(f"  [{i+1}/{self.batch_size}] {strat['name']}")
@@ -279,6 +396,17 @@ class ScalpOrchestrator:
                 )
                 save_strategy(rec)
                 log_event(strat["id"], "killed_is", kill_reason)
+                
+                # Track near-misses for mutation (score > -50 = promising)
+                if is_result.score > -50 and is_result.num_trades >= 20:
+                    self.elite_pool.append(strat)
+                    # Keep elite pool manageable
+                    if len(self.elite_pool) > 20:
+                        # Sort by IS score, keep top 20
+                        self.elite_pool.sort(key=lambda s: s.get("_is_score", -999), reverse=True)
+                        self.elite_pool = self.elite_pool[:20]
+                    strat["_is_score"] = is_result.score
+                
                 continue
             
             print(f"    IS: score={is_result.score:.2f} sharpe={is_result.sharpe:.2f} "
@@ -305,7 +433,29 @@ class ScalpOrchestrator:
             print(f"    ✅ OOS: score={oos_result.score:.2f} sharpe={oos_result.sharpe:.2f} "
                   f"ret={oos_result.total_return_pct:.1f}% dd={oos_result.max_drawdown_pct:.1f}%")
             
-            # Save to DB
+            # WALK-FORWARD: Also test on hidden test split (2025 forward data)
+            test_result = self.backtester.run(None, split="test", params=strat["params"])
+            
+            if test_result.score <= 0:
+                print(f"    ❌ Walk-forward FAILED: test_score={test_result.score:.2f}")
+                rec = StrategyRecord(
+                    id=strat["id"], name=strat["name"], code="",
+                    params=strat["params"], signals_used=strat["signals"],
+                    is_sharpe=is_result.sharpe, is_return_pct=is_result.total_return_pct,
+                    is_max_dd_pct=is_result.max_drawdown_pct, is_num_trades=is_result.num_trades,
+                    is_score=is_result.score, oos_sharpe=oos_result.sharpe,
+                    oos_return_pct=oos_result.total_return_pct,
+                    oos_max_dd_pct=oos_result.max_drawdown_pct,
+                    oos_num_trades=oos_result.num_trades, oos_score=oos_result.score,
+                    status="killed", kill_reason=f"Walk-forward fail: test={test_result.score:.2f}",
+                )
+                save_strategy(rec)
+                continue
+            
+            print(f"    ✅ Walk-forward PASSED: test={test_result.score:.2f} "
+                  f"sharpe={test_result.sharpe:.2f}")
+            
+            # Save to DB — strategy passed ALL THREE splits
             rec = StrategyRecord(
                 id=strat["id"], name=strat["name"], code=strat["code"],
                 params=strat["params"], signals_used=strat["signals"],
@@ -318,6 +468,13 @@ class ScalpOrchestrator:
                 status="passed_oos",
             )
             save_strategy(rec)
+            
+            # Add to elite pool (top priority — passed all 3 splits)
+            strat["_is_score"] = is_result.score
+            self.elite_pool.append(strat)
+            if len(self.elite_pool) > 20:
+                self.elite_pool.sort(key=lambda s: s.get("_is_score", -999), reverse=True)
+                self.elite_pool = self.elite_pool[:20]
             
             if oos_result.score > self.best_score:
                 self.best_score = oos_result.score

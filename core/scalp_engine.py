@@ -37,12 +37,13 @@ from .binance_data import BinanceDataLoader, compute_scalp_features, INTERVAL_MS
 # ─────────────────────────────────────────────────────────────────
 
 INITIAL_CAPITAL = 1000.0       # $1000 scalping account
-MAKER_FEE = 0.0002             # 0.02% futures maker
-TAKER_FEE = 0.0004             # 0.04% futures taker
-SLIPPAGE_BPS = 2.0             # 2 bps slippage (tighter on 5m)
+MAKER_FEE = 0.0004             # 0.04% futures maker (BRUTAL: doubled from 0.02%)
+TAKER_FEE = 0.0007             # 0.07% futures taker (BRUTAL: includes slippage buffer)
+SLIPPAGE_BPS = 5.0             # 5 bps slippage (BRUTAL: realistic for 5m crypto)
 MAX_LEVERAGE = 10              # Conservative for scalping
 LOOKBACK_BARS = 200            # History buffer for strategy
 TIME_BUDGET = 180              # 3 minutes max per backtest
+LATENCY_BARS_SKIP = 1         # Skip 1 bar after signal (simulates execution delay)
 
 BARS_PER_YEAR_5M = 365.25 * 24 * 12  # ~105,120 five-minute bars/year
 
@@ -609,32 +610,37 @@ class ScalpBacktester:
     def _compute_score(self, sharpe, num_trades, max_dd_pct,
                        total_return_pct, annual_turnover, final_equity) -> float:
         """
-        Scalping-specific scoring.
+        BRUTAL scoring — only robust strategies survive.
         
-        Scalping needs MORE trades than swing trading, so:
-        - Full credit at 200+ trades (vs 50 for hourly)
-        - Tighter drawdown tolerance (10% vs 15%)
-        - Turnover penalty threshold higher (scalping = high turnover by nature)
+        Hardened against curve-fitting:
+        - Minimum 20 trades (enough for statistical significance)
+        - Max 30% drawdown (prop firm compatible)
+        - Must be profitable (return > 0)
+        - Penalizes over-trading harshly
+        - Rewards Sharpe, penalizes drawdown aggressively
         """
         # Hard cutoffs
-        if num_trades < 30:
+        if num_trades < 20:
             return -999.0
-        if max_dd_pct > 40.0:
+        if max_dd_pct > 30.0:  # Prop firm compatible
             return -999.0
-        if final_equity < self.initial_capital * 0.6:
+        if final_equity < self.initial_capital:  # Must be profitable
             return -999.0
         
-        # Trade count factor (full credit at 200+)
-        trade_factor = min(num_trades / 200.0, 1.0)
+        # Trade count factor (full credit at 100+, partial below)
+        trade_factor = min(num_trades / 100.0, 1.0)
         
-        # Drawdown penalty (stricter for scalping)
-        dd_penalty = max(0, max_dd_pct - 10.0) * 0.08
+        # Drawdown penalty (brutal: any DD over 5% gets punished)
+        dd_penalty = max(0, max_dd_pct - 5.0) * 0.12
         
-        # Turnover penalty (higher threshold for scalping)
+        # Turnover penalty (punish over-trading — forces quality over quantity)
         turnover_ratio = annual_turnover / self.initial_capital if self.initial_capital > 0 else 0
-        turnover_penalty = max(0, turnover_ratio - 2000) * 0.0005
+        turnover_penalty = max(0, turnover_ratio - 500) * 0.001
         
-        score = sharpe * math.sqrt(trade_factor) - dd_penalty - turnover_penalty
+        # Profit bonus (reward actual money made, not just ratio)
+        profit_bonus = total_return_pct * 0.02 if total_return_pct > 0 else 0
+        
+        score = sharpe * math.sqrt(trade_factor) - dd_penalty - turnover_penalty + profit_bonus
         return score
 
 
