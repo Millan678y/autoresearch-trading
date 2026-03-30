@@ -187,9 +187,10 @@ def download_klines(symbol: str, interval: str,
     # Auto-save to CSV cache (no pyarrow needed)
     os.makedirs(CACHE_DIR, exist_ok=True)
     csv_path = os.path.join(CACHE_DIR, f"{symbol}_{interval}.csv")
+    # Force CSV format — never use to_parquet here
     df.to_csv(csv_path, index=False)
     if verbose:
-        print(f"  {symbol}: cached to {csv_path}")
+        print(f"  {symbol}: cached to {csv_path} ({os.path.getsize(csv_path)} bytes)")
     
     return df
 
@@ -266,13 +267,8 @@ class BinanceDataLoader:
         df = download_klines(symbol, interval, start, end)
         
         if len(df) > 0:
-            try:
-                df.to_parquet(path, index=False)
-            except ImportError:
-                # No pyarrow — save as CSV instead
-                csv_path = path.replace(".parquet", ".csv")
-                df.to_csv(csv_path, index=False)
-                print(f"  Saved as CSV (install pyarrow for faster loading)")
+            # Always save as CSV — works everywhere, no pyarrow needed
+            df.to_csv(path, index=False)
         
         return df
     
