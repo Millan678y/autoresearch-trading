@@ -98,6 +98,117 @@ SIGNAL_LIBRARY = {
     bear = closes[-1] < closes[-2] - atr * {mult}''',
         "params": {"period": (10, 30), "mult": (1.0, 3.0)},
     },
+    # ── SMC / Order Flow / Candlestick Signals ──
+    "order_block": {
+        "code": '''
+    from core.smc import get_active_order_blocks
+    active_obs = get_active_order_blocks(opens, highs, lows, closes, volumes, closes[-1], max_age={max_age})
+    bull_obs = [ob for ob in active_obs if ob.type == "bullish" and closes[-1] >= ob.low and closes[-1] <= ob.high * 1.01]
+    bear_obs = [ob for ob in active_obs if ob.type == "bearish" and closes[-1] <= ob.high and closes[-1] >= ob.low * 0.99]
+    bull = len(bull_obs) > 0
+    bear = len(bear_obs) > 0''',
+        "params": {"max_age": (50, 200)},
+    },
+    "fvg": {
+        "code": '''
+    from core.smc import detect_fvg
+    fvgs = detect_fvg(highs, lows, closes, min_gap_pct={min_gap})
+    recent_bull = [g for g in fvgs if g.type == "bullish" and not g.filled and g.index > len(closes) - {recency}]
+    recent_bear = [g for g in fvgs if g.type == "bearish" and not g.filled and g.index > len(closes) - {recency}]
+    bull = len(recent_bull) > 0 and closes[-1] > closes[-2]
+    bear = len(recent_bear) > 0 and closes[-1] < closes[-2]''',
+        "params": {"min_gap": (0.001, 0.005), "recency": (10, 50)},
+    },
+    "structure_break": {
+        "code": '''
+    from core.smc import detect_structure_breaks
+    breaks = detect_structure_breaks(highs, lows, closes, swing_lookback={swing_lb})
+    recent = [b for b in breaks if b.index > len(closes) - 10]
+    bull = any(b.type in ("bos_bullish", "choch_bullish") for b in recent)
+    bear = any(b.type in ("bos_bearish", "choch_bearish") for b in recent)''',
+        "params": {"swing_lb": (3, 10)},
+    },
+    "liquidity_sweep": {
+        "code": '''
+    from core.smc import detect_liquidity_sweeps
+    sweeps = detect_liquidity_sweeps(highs, lows, closes, swing_lookback={swing_lb})
+    recent = [s for s in sweeps if s.index > len(closes) - 5 and s.reversal]
+    bull = any(s.type == "sell_side" for s in recent)
+    bear = any(s.type == "buy_side" for s in recent)''',
+        "params": {"swing_lb": (3, 8)},
+    },
+    "premium_discount": {
+        "code": '''
+    from core.smc import compute_premium_discount
+    pd_zone = compute_premium_discount(highs, lows, closes, lookback={lookback})
+    bull = pd_zone["zone"] in ("discount", "slight_discount")
+    bear = pd_zone["zone"] in ("premium", "slight_premium")''',
+        "params": {"lookback": (24, 100)},
+    },
+    "cvd_divergence": {
+        "code": '''
+    from core.orderflow import cumulative_volume_delta, cvd_divergence
+    cvd = cumulative_volume_delta(opens, highs, lows, closes, volumes)
+    div = cvd_divergence(closes, cvd, lookback={lookback})
+    bull = div in ("confirmed_bull", "bullish_div")
+    bear = div in ("confirmed_bear", "bearish_div")''',
+        "params": {"lookback": (10, 40)},
+    },
+    "vwap": {
+        "code": '''
+    from core.orderflow import compute_vwap, vwap_signal
+    vwap_arr = compute_vwap(highs, lows, closes, volumes)
+    sig = vwap_signal(closes, vwap_arr)
+    bull = sig in ("bullish_cross", "above_vwap")
+    bear = sig in ("bearish_cross", "below_vwap")''',
+        "params": {},
+    },
+    "absorption": {
+        "code": '''
+    from core.orderflow import detect_absorption
+    absorptions = detect_absorption(opens, highs, lows, closes, volumes, vol_threshold={vol_thresh})
+    recent = [a for a in absorptions if a["index"] > len(closes) - 5]
+    bull = any(a["type"] == "bullish_absorption" for a in recent)
+    bear = any(a["type"] == "bearish_absorption" for a in recent)''',
+        "params": {"vol_thresh": (1.5, 3.0)},
+    },
+    "exhaustion": {
+        "code": '''
+    from core.orderflow import detect_exhaustion
+    exhs = detect_exhaustion(opens, highs, lows, closes, volumes, vol_threshold={vol_thresh})
+    recent = [e for e in exhs if e["index"] > len(closes) - 5]
+    bull = any(e["type"] == "selling_exhaustion" for e in recent)
+    bear = any(e["type"] == "buying_exhaustion" for e in recent)''',
+        "params": {"vol_thresh": (2.0, 4.0)},
+    },
+    "candlestick_pattern": {
+        "code": '''
+    from core.candlestick_patterns import compute_candle_signal
+    candle_sig = compute_candle_signal(opens, highs, lows, closes, lookback={lookback})
+    bull = candle_sig["bias"] == "bullish" and candle_sig["strength"] > {min_strength}
+    bear = candle_sig["bias"] == "bearish" and candle_sig["strength"] > {min_strength}''',
+        "params": {"lookback": (1, 5), "min_strength": (0.2, 0.6)},
+    },
+    "engulfing": {
+        "code": '''
+    from core.candlestick_patterns import detect_engulfing
+    if len(opens) >= 2:
+        p = detect_engulfing(opens[-2], highs[-2], lows[-2], closes[-2], opens[-1], highs[-1], lows[-1], closes[-1])
+        bull = p is not None and p.direction == "bullish"
+        bear = p is not None and p.direction == "bearish"
+    else:
+        bull = False
+        bear = False''',
+        "params": {},
+    },
+    "volume_profile": {
+        "code": '''
+    from core.orderflow import compute_volume_profile
+    vp = compute_volume_profile(highs[-{lookback}:], lows[-{lookback}:], closes[-{lookback}:], volumes[-{lookback}:])
+    bull = closes[-1] < vp.value_area_low
+    bear = closes[-1] > vp.value_area_high''',
+        "params": {"lookback": (50, 200)},
+    },
 }
 
 # ─────────────────────────────────────────────────────────────────
