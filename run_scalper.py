@@ -171,7 +171,20 @@ def _random_param(param_range):
     return round(random.uniform(lo, hi), 6)
 
 
-ALL_SCALP_SIGNAL_NAMES = list(SCALP_SIGNALS.keys()) + ["macd_fast", "bb_squeeze", "obv_trend"]
+SCALP_SIGNALS["macd_fast"] = {
+    "code": "",
+    "params": {"fast": (8, 14), "slow": (16, 26), "signal": (5, 9)},
+}
+SCALP_SIGNALS["bb_squeeze"] = {
+    "code": "",
+    "params": {"period": (10, 20)},
+}
+SCALP_SIGNALS["obv_trend"] = {
+    "code": "",
+    "params": {"period": (10, 25)},
+}
+
+ALL_SCALP_SIGNAL_NAMES = list(SCALP_SIGNALS.keys())
 
 def generate_scalp_strategy() -> dict:
     """Generate a random scalping strategy config (no code generation)."""

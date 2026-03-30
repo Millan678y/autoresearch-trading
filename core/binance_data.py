@@ -218,13 +218,18 @@ class BinanceDataLoader:
         os.makedirs(cache_dir, exist_ok=True)
     
     def _cache_path(self, symbol: str, interval: str) -> str:
-        """Return cache path — prefer parquet, fallback to CSV."""
-        parquet_path = os.path.join(self.cache_dir, f"{symbol}_{interval}.parquet")
+        """Return cache path — CSV only (always works, no pyarrow needed)."""
         csv_path = os.path.join(self.cache_dir, f"{symbol}_{interval}.csv")
         
+        # Delete stale parquet files that can't be read without pyarrow
+        parquet_path = os.path.join(self.cache_dir, f"{symbol}_{interval}.parquet")
         if os.path.exists(parquet_path):
-            return parquet_path
-        return csv_path  # Default to CSV (always works, no pyarrow needed)
+            try:
+                os.remove(parquet_path)
+            except:
+                pass
+        
+        return csv_path
     
     def download(self, symbol: str, interval: str = None,
                  force: bool = False) -> pd.DataFrame:
