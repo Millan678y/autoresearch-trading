@@ -36,7 +36,7 @@ from .binance_data import BinanceDataLoader, compute_scalp_features, INTERVAL_MS
 # Constants
 # ─────────────────────────────────────────────────────────────────
 
-INITIAL_CAPITAL = 100.0        # $100 scalping account
+INITIAL_CAPITAL = 1000.0       # $1000 scalping account
 MAKER_FEE = 0.0002             # 0.02% futures maker
 TAKER_FEE = 0.0004             # 0.04% futures taker
 SLIPPAGE_BPS = 2.0             # 2 bps slippage (tighter on 5m)
