@@ -305,6 +305,18 @@ class ScalpOrchestrator:
             if is_result.score <= 0:
                 print(f"    ❌ IS failed: score={is_result.score:.2f} "
                       f"trades={is_result.num_trades} dd={is_result.max_drawdown_pct:.1f}%")
+                
+                # Save killed strategy to DB for dashboard
+                kill_reason = f"IS fail: score={is_result.score:.2f} trades={is_result.num_trades} dd={is_result.max_drawdown_pct:.1f}%"
+                rec = StrategyRecord(
+                    id=strat["id"], name=strat["name"], code="",
+                    params=strat["params"], signals_used=strat["signals"],
+                    is_sharpe=is_result.sharpe, is_return_pct=is_result.total_return_pct,
+                    is_max_dd_pct=is_result.max_drawdown_pct, is_num_trades=is_result.num_trades,
+                    is_score=is_result.score, status="killed", kill_reason=kill_reason,
+                )
+                save_strategy(rec)
+                log_event(strat["id"], "killed_is", kill_reason)
                 continue
             
             print(f"    IS: score={is_result.score:.2f} sharpe={is_result.sharpe:.2f} "
