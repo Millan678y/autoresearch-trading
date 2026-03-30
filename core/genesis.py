@@ -209,6 +209,109 @@ SIGNAL_LIBRARY = {
     bear = closes[-1] > vp.value_area_high''',
         "params": {"lookback": (50, 200)},
     },
+    # ── Technical Analysis Signals ──
+    "ichimoku": {
+        "code": '''
+    from core.technical_analysis import ichimoku
+    ichi = ichimoku(highs, lows, closes, tenkan={tenkan}, kijun={kijun})
+    bull = "bull" in ichi["signal"]
+    bear = "bear" in ichi["signal"]''',
+        "params": {"tenkan": (7, 12), "kijun": (20, 30)},
+    },
+    "supertrend": {
+        "code": '''
+    from core.technical_analysis import supertrend
+    st, st_dir = supertrend(highs, lows, closes, period={period}, multiplier={mult})
+    bull = st_dir[-1] == 1
+    bear = st_dir[-1] == -1''',
+        "params": {"period": (7, 14), "mult": (2.0, 4.0)},
+    },
+    "parabolic_sar": {
+        "code": '''
+    from core.technical_analysis import parabolic_sar
+    sar, sar_dir = parabolic_sar(highs, lows, af_start={af_start}, af_max={af_max})
+    bull = sar_dir[-1] == 1
+    bear = sar_dir[-1] == -1''',
+        "params": {"af_start": (0.01, 0.03), "af_max": (0.15, 0.25)},
+    },
+    "williams_r": {
+        "code": '''
+    from core.technical_analysis import williams_r
+    wr = williams_r(highs, lows, closes, period={period})
+    wr_val = wr[-1] if not np.isnan(wr[-1]) else -50
+    bull = wr_val < -{oversold}
+    bear = wr_val > -{overbought}''',
+        "params": {"period": (10, 21), "oversold": (75, 85), "overbought": (15, 25)},
+    },
+    "cci_signal": {
+        "code": '''
+    from core.technical_analysis import cci
+    cci_arr = cci(highs, lows, closes, period={period})
+    c = cci_arr[-1] if not np.isnan(cci_arr[-1]) else 0
+    bull = c > {bull_thresh}
+    bear = c < -{bear_thresh}''',
+        "params": {"period": (14, 30), "bull_thresh": (80, 150), "bear_thresh": (80, 150)},
+    },
+    "mfi_signal": {
+        "code": '''
+    from core.technical_analysis import mfi
+    mfi_arr = mfi(highs, lows, closes, volumes, period={period})
+    m = mfi_arr[-1] if not np.isnan(mfi_arr[-1]) else 50
+    bull = m < {oversold}
+    bear = m > {overbought}''',
+        "params": {"period": (10, 20), "oversold": (15, 30), "overbought": (70, 85)},
+    },
+    "obv_trend": {
+        "code": '''
+    from core.technical_analysis import obv
+    obv_arr = obv(closes, volumes)
+    obv_sma = np.mean(obv_arr[-{period}:])
+    bull = obv_arr[-1] > obv_sma
+    bear = obv_arr[-1] < obv_sma''',
+        "params": {"period": (10, 30)},
+    },
+    "hull_ma": {
+        "code": '''
+    from core.technical_analysis import hull_moving_average
+    hma = hull_moving_average(closes, period={period})
+    bull = not np.isnan(hma[-1]) and closes[-1] > hma[-1] and hma[-1] > hma[-2]
+    bear = not np.isnan(hma[-1]) and closes[-1] < hma[-1] and hma[-1] < hma[-2]''',
+        "params": {"period": (12, 24)},
+    },
+    "donchian_breakout": {
+        "code": '''
+    from core.technical_analysis import donchian_channels
+    dc_upper, dc_mid, dc_lower = donchian_channels(highs, lows, period={period})
+    bull = not np.isnan(dc_upper[-2]) and closes[-1] > dc_upper[-2]
+    bear = not np.isnan(dc_lower[-2]) and closes[-1] < dc_lower[-2]''',
+        "params": {"period": (15, 40)},
+    },
+    "keltner_squeeze": {
+        "code": '''
+    from core.technical_analysis import keltner_channels
+    kc_upper, kc_mid, kc_lower = keltner_channels(highs, lows, closes, ema_period={period}, multiplier={mult})
+    bull = closes[-1] > kc_upper[-1]
+    bear = closes[-1] < kc_lower[-1]''',
+        "params": {"period": (15, 25), "mult": (1.0, 2.5)},
+    },
+    "chaikin_mf": {
+        "code": '''
+    from core.technical_analysis import chaikin_money_flow
+    cmf = chaikin_money_flow(highs, lows, closes, volumes, period={period})
+    cmf_val = cmf[-1] if not np.isnan(cmf[-1]) else 0
+    bull = cmf_val > {threshold}
+    bear = cmf_val < -{threshold}''',
+        "params": {"period": (15, 25), "threshold": (0.03, 0.10)},
+    },
+    "trix_signal": {
+        "code": '''
+    from core.technical_analysis import trix
+    trix_arr = trix(closes, period={period})
+    t = trix_arr[-1] if not np.isnan(trix_arr[-1]) else 0
+    bull = t > 0
+    bear = t < 0''',
+        "params": {"period": (10, 20)},
+    },
 }
 
 # ─────────────────────────────────────────────────────────────────
