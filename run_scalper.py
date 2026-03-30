@@ -186,12 +186,26 @@ SCALP_SIGNALS["obv_trend"] = {
 
 ALL_SCALP_SIGNAL_NAMES = list(SCALP_SIGNALS.keys())
 
-def generate_scalp_strategy() -> dict:
-    """Generate a random scalping strategy config (no code generation)."""
+def generate_scalp_strategy(hints: dict = None) -> dict:
+    """Generate a scalping strategy config, guided by past learnings if available."""
     
-    # Pick 3-6 signals
+    # If we have hints from past runs, bias signal selection
+    preferred = hints.get("preferred_signals", []) if hints else []
+    
     n_signals = random.randint(3, min(6, len(ALL_SCALP_SIGNAL_NAMES)))
-    chosen = random.sample(ALL_SCALP_SIGNAL_NAMES, n_signals)
+    
+    if preferred and random.random() < 0.6:
+        # 60% chance: include at least 1-2 preferred signals
+        n_preferred = min(2, len(preferred), n_signals - 1)
+        valid_preferred = [s for s in preferred if s in ALL_SCALP_SIGNAL_NAMES]
+        if valid_preferred:
+            forced = random.sample(valid_preferred, min(n_preferred, len(valid_preferred)))
+            remaining = [s for s in ALL_SCALP_SIGNAL_NAMES if s not in forced]
+            chosen = forced + random.sample(remaining, n_signals - len(forced))
+        else:
+            chosen = random.sample(ALL_SCALP_SIGNAL_NAMES, n_signals)
+    else:
+        chosen = random.sample(ALL_SCALP_SIGNAL_NAMES, n_signals)
     
     # Generate params
     params = {}
@@ -275,8 +289,21 @@ class ScalpOrchestrator:
         
         print("\n🚀 Starting autonomous loop...\n")
         
+        self.hints = {}
+        
         while self.running and self.generation < self.max_generations:
             self.generation += 1
+            
+            # Every 5 generations, learn from past results
+            if self.generation % 5 == 1:
+                try:
+                    compile_insights()
+                    self.hints = get_generation_hints()
+                    if self.hints.get("preferred_signals"):
+                        print(f"  🧠 Learned: prefer {self.hints['preferred_signals'][:4]}")
+                except:
+                    self.hints = {}
+            
             self._run_generation()
         
         self._final_report()
@@ -293,7 +320,7 @@ class ScalpOrchestrator:
             if not self.running:
                 break
             
-            strat = generate_scalp_strategy()
+            strat = generate_scalp_strategy(hints=self.hints)
             self.total_tested += 1
             
             print(f"  [{i+1}/{self.batch_size}] {strat['name']}")
