@@ -137,10 +137,10 @@ SCALP_SIGNALS = {
     },
     "session_filter": {
         "code": """
-        good_session = bar.session in ("{session1}", "{session2}")
+        good_session = bar.session in ("london", "ny")
         s_bull = good_session and closes[-1] > closes[-3]
         s_bear = good_session and closes[-1] < closes[-3]""",
-        "params": {"session1": ["london", "ny"], "session2": ["ny", "london"]},
+        "params": {},
     },
     "microvol_regime": {
         "code": """
@@ -199,86 +199,81 @@ def generate_scalp_strategy() -> dict:
         "size_pct": size_pct,
     })
     
-    # Build signal code
-    signal_blocks = []
+    # Build signal code — each signal indented at method level
+    signal_lines = []
+    signal_lines.append("        bull_votes = 0")
+    signal_lines.append("        bear_votes = 0")
+    
     for i, sig in enumerate(chosen):
         code = SCALP_SIGNALS[sig]["code"]
         for p_name in SCALP_SIGNALS[sig]["params"]:
             key = f"{sig}__{p_name}"
-            code = code.replace(f"{{{p_name}}}", str(params[key]))
+            if key in params:
+                code = code.replace("{" + p_name + "}", str(params[key]))
         
-        signal_blocks.append(f"        # Signal: {sig}")
-        signal_blocks.append(code)
-        signal_blocks.append(f"        if s_bull: bull_votes += 1")
-        signal_blocks.append(f"        if s_bear: bear_votes += 1")
+        signal_lines.append(f"        # Signal: {sig}")
+        # Ensure each line is properly indented
+        for line in code.strip().split("\n"):
+            stripped = line.strip()
+            if stripped:
+                signal_lines.append(f"        {stripped}")
+        signal_lines.append(f"        if s_bull: bull_votes += 1")
+        signal_lines.append(f"        if s_bear: bear_votes += 1")
     
-    signal_code = "bull_votes = 0\n        bear_votes = 0\n" + "\n".join(signal_blocks)
+    signal_block = "\n".join(signal_lines)
     
-    # Exit code
-    exit_code = """bars_held = self.bar_count - position.entry_bar
-            if bars_held > {max_hold}:
-                return ScalpSignal(symbol=bar.symbol, action="close", reason="max_hold")""".format(
-        max_hold=random.randint(24, 144)
+    max_hold = random.randint(24, 144)
+    
+    # Build full strategy code using string concatenation (not f-string, avoids brace issues)
+    strategy_code = (
+        '"""\nAuto-generated scalping strategy.\n"""\n'
+        'import numpy as np\n'
+        'from core.scalp_engine import ScalpSignal\n\n'
+        'class ScalpStrategy:\n'
+        '    def __init__(self):\n'
+        '        self.bar_count = 0\n'
+        '        self.last_trade_bar = -999\n\n'
+        '    def on_bar(self, bar, position, equity):\n'
+        '        self.bar_count += 1\n'
+        '        h = bar.history\n\n'
+        '        if len(h) < 50:\n'
+        '            return ScalpSignal(symbol=bar.symbol, action="none")\n\n'
+        '        if self.bar_count - self.last_trade_bar < ' + str(cooldown) + ':\n'
+        '            if position is None:\n'
+        '                return ScalpSignal(symbol=bar.symbol, action="none")\n\n'
+        '        closes = h["close"].values.astype(float)\n'
+        '        highs = h["high"].values.astype(float)\n'
+        '        lows = h["low"].values.astype(float)\n\n'
+        + signal_block + '\n\n'
+        '        if position is not None:\n'
+        '            bars_held = self.bar_count - position.entry_bar\n'
+        '            if bars_held > ' + str(max_hold) + ':\n'
+        '                return ScalpSignal(symbol=bar.symbol, action="close", reason="max_hold")\n'
+        '            return ScalpSignal(symbol=bar.symbol, action="none")\n\n'
+        '        # Entry\n'
+        '        if len(closes) < 14:\n'
+        '            return ScalpSignal(symbol=bar.symbol, action="none")\n'
+        '        atr = np.mean(highs[-12:] - lows[-12:])\n'
+        '        if atr <= 0:\n'
+        '            atr = abs(closes[-1]) * 0.001\n\n'
+        '        if bull_votes >= ' + str(min_votes) + ':\n'
+        '            self.last_trade_bar = self.bar_count\n'
+        '            return ScalpSignal(\n'
+        '                symbol=bar.symbol, action="long", size_pct=' + str(size_pct) + ',\n'
+        '                take_profit=bar.close + atr * ' + str(tp_mult) + ',\n'
+        '                stop_loss=bar.close - atr * ' + str(sl_mult) + ',\n'
+        '                reason="bull_signal"\n'
+        '            )\n'
+        '        elif bear_votes >= ' + str(min_votes) + ':\n'
+        '            self.last_trade_bar = self.bar_count\n'
+        '            return ScalpSignal(\n'
+        '                symbol=bar.symbol, action="short", size_pct=' + str(size_pct) + ',\n'
+        '                take_profit=bar.close - atr * ' + str(tp_mult) + ',\n'
+        '                stop_loss=bar.close + atr * ' + str(sl_mult) + ',\n'
+        '                reason="bear_signal"\n'
+        '            )\n\n'
+        '        return ScalpSignal(symbol=bar.symbol, action="none")\n'
     )
-    
-    # Build full strategy code
-    strategy_code = f'''
-"""Auto-generated scalping strategy."""
-import numpy as np
-from core.scalp_engine import ScalpSignal
-
-class ScalpStrategy:
-    def __init__(self):
-        self.bar_count = 0
-        self.last_trade_bar = -999
-    
-    def on_bar(self, bar, position, equity):
-        self.bar_count += 1
-        h = bar.history
-        
-        if len(h) < 50:
-            return ScalpSignal(symbol=bar.symbol, action="none")
-        
-        if self.bar_count - self.last_trade_bar < {cooldown}:
-            if position is None:
-                return ScalpSignal(symbol=bar.symbol, action="none")
-        
-        closes = h["close"].values.astype(float)
-        highs = h["high"].values.astype(float)
-        lows = h["low"].values.astype(float)
-        
-        {signal_code}
-        
-        if position is not None:
-            {exit_code}
-            return ScalpSignal(symbol=bar.symbol, action="none")
-        
-        # Entry
-        atr = np.mean(np.maximum(highs[-12:] - lows[-12:],
-                      np.maximum(np.abs(highs[-12:] - np.concatenate([[closes[-13]], closes[-12:]])[:-1]),
-                                np.abs(lows[-12:] - np.concatenate([[closes[-13]], closes[-12:]])[:-1]))))
-        if atr <= 0:
-            atr = abs(closes[-1]) * 0.001
-        
-        if bull_votes >= {min_votes}:
-            self.last_trade_bar = self.bar_count
-            return ScalpSignal(
-                symbol=bar.symbol, action="long", size_pct={size_pct},
-                take_profit=bar.close + atr * {tp_mult},
-                stop_loss=bar.close - atr * {sl_mult},
-                reason="bull_signal"
-            )
-        elif bear_votes >= {min_votes}:
-            self.last_trade_bar = self.bar_count
-            return ScalpSignal(
-                symbol=bar.symbol, action="short", size_pct={size_pct},
-                take_profit=bar.close - atr * {tp_mult},
-                stop_loss=bar.close + atr * {sl_mult},
-                reason="bear_signal"
-            )
-        
-        return ScalpSignal(symbol=bar.symbol, action="none")
-'''
     
     sid = hashlib.sha256(strategy_code.encode()).hexdigest()[:12]
     
