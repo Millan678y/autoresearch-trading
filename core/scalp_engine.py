@@ -36,7 +36,7 @@ from .binance_data import BinanceDataLoader, compute_scalp_features, INTERVAL_MS
 # Constants
 # ─────────────────────────────────────────────────────────────────
 
-INITIAL_CAPITAL = 10_000.0     # $10K for scalping (more realistic)
+INITIAL_CAPITAL = 100.0        # $100 scalping account
 MAKER_FEE = 0.0002             # 0.02% futures maker
 TAKER_FEE = 0.0004             # 0.04% futures taker
 SLIPPAGE_BPS = 2.0             # 2 bps slippage (tighter on 5m)
@@ -379,7 +379,7 @@ class ScalpBacktester:
                     size = max_size * np.clip(signal.size_pct, 0.1, 1.0)
                     size = min(size, cash * 0.95)  # Keep some cash
                     
-                    if size < 50:  # Minimum $50 position
+                    if size < 5:  # Minimum $5 position
                         continue
                     
                     entry_price = current_price * (1 + SLIPPAGE_BPS / 10000 * direction)
@@ -420,7 +420,7 @@ class ScalpBacktester:
                         size = max_size * np.clip(signal.size_pct, 0.1, 1.0)
                         size = min(size, cash * 0.95)
                         
-                        if size >= 50:
+                        if size >= 5:
                             entry_price = current_price * (1 + SLIPPAGE_BPS / 10000 * new_dir)
                             cash -= size + size * TAKER_FEE
                             total_volume += size

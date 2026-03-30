@@ -455,6 +455,10 @@ class ScalpOrchestrator:
                 export_top_strategies(output_dir="mql5_experts", top_n=10, mode="scalp")
             except Exception as e:
                 print(f"  MQL5 export error: {e}")
+        
+        # Note: Scalping mode uses $100 balance
+        print(f"\n💰 Scalping mode: $100 account balance")
+        print(f"   All results are based on $100 starting capital")
 
 
 # ─────────────────────────────────────────────────────────────────
