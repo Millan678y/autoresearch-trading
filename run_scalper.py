@@ -213,12 +213,12 @@ def generate_scalp_strategy(hints: dict = None) -> dict:
         for p_name, p_range in SCALP_SIGNALS[sig]["params"].items():
             params[f"{sig}__{p_name}"] = _random_param(p_range)
     
-    # Strategy-level params
-    min_votes = random.randint(2, max(2, n_signals - 2))
-    cooldown = random.randint(3, 12)
-    tp_mult = round(random.uniform(1.0, 3.0), 2)
-    sl_mult = round(random.uniform(1.0, 3.0), 2)
-    size_pct = round(random.uniform(0.3, 0.8), 2)
+    # Strategy-level params — require majority consensus to reduce overtrading
+    min_votes = random.randint(max(2, n_signals // 2), max(2, n_signals - 1))
+    cooldown = random.randint(6, 24)  # Wait 30min-2hr between trades
+    tp_mult = round(random.uniform(1.5, 4.0), 2)  # Higher TP for better RR
+    sl_mult = round(random.uniform(0.8, 2.0), 2)   # Tighter SL
+    size_pct = round(random.uniform(0.1, 0.4), 2)  # Smaller positions
     
     params.update({
         "min_votes": min_votes,
@@ -236,7 +236,9 @@ def generate_scalp_strategy(hints: dict = None) -> dict:
     # No code generation — strategy is parametric
     strategy_code = ""  # Not used anymore
     
-    sid = hashlib.sha256(strategy_code.encode()).hexdigest()[:12]
+    # Hash the params to get a unique ID (not the empty code string!)
+    param_str = json.dumps(params, sort_keys=True)
+    sid = hashlib.sha256(param_str.encode()).hexdigest()[:12]
     
     return {
         "id": sid,
