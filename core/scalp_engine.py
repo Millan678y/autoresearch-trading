@@ -194,8 +194,14 @@ class ScalpBacktester:
             else:
                 return ScalpResult(score=-999)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return ScalpResult(score=-999, 
                              trade_log=[{"error": f"Strategy load error: {e}"}])
+        
+        # Debug: confirm strategy loaded
+        if hasattr(strategy, 'signals'):
+            pass  # Strategy is parametric
         
         # Run simulation
         return self._simulate(strategy, data, t_start)
@@ -254,12 +260,21 @@ class ScalpBacktester:
         history_bufs = {symbol: [] for symbol in data}
         bar_count = 0
         
+        n_timestamps = len(timestamps)
+        report_every = max(1, n_timestamps // 10)
+        
         for ts in timestamps:
             # Time budget check
             if time.time() - t_start > TIME_BUDGET:
                 break
             
             bar_count += 1
+            
+            if bar_count == 1 or bar_count % report_every == 0:
+                elapsed = time.time() - t_start
+                pct = bar_count / n_timestamps * 100
+                # Print progress on first run only
+            
             session = _get_session(ts)
             
             for symbol in data:
@@ -357,7 +372,11 @@ class ScalpBacktester:
                 
                 try:
                     signal = strategy.on_bar(bar, current_pos, equity)
-                except Exception:
+                except Exception as e:
+                    if bar_count <= 3:
+                        import traceback
+                        print(f"    ⚠️  Strategy error on bar {bar_count}: {e}")
+                        traceback.print_exc()
                     signal = ScalpSignal(symbol=symbol, action="none")
                 
                 if signal is None or signal.action == "none":
