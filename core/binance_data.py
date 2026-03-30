@@ -184,6 +184,13 @@ def download_klines(symbol: str, interval: str,
     if verbose:
         print(f"  {symbol} {interval}: {len(df):,} candles downloaded")
     
+    # Auto-save to CSV cache (no pyarrow needed)
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    csv_path = os.path.join(CACHE_DIR, f"{symbol}_{interval}.csv")
+    df.to_csv(csv_path, index=False)
+    if verbose:
+        print(f"  {symbol}: cached to {csv_path}")
+    
     return df
 
 
@@ -211,7 +218,13 @@ class BinanceDataLoader:
         os.makedirs(cache_dir, exist_ok=True)
     
     def _cache_path(self, symbol: str, interval: str) -> str:
-        return os.path.join(self.cache_dir, f"{symbol}_{interval}.parquet")
+        """Return cache path — prefer parquet, fallback to CSV."""
+        parquet_path = os.path.join(self.cache_dir, f"{symbol}_{interval}.parquet")
+        csv_path = os.path.join(self.cache_dir, f"{symbol}_{interval}.csv")
+        
+        if os.path.exists(parquet_path):
+            return parquet_path
+        return csv_path  # Default to CSV (always works, no pyarrow needed)
     
     def download(self, symbol: str, interval: str = None,
                  force: bool = False) -> pd.DataFrame:
@@ -220,28 +233,18 @@ class BinanceDataLoader:
         path = self._cache_path(symbol, interval)
         
         if os.path.exists(path) and not force:
-            df = pd.read_parquet(path)
-            print(f"  {symbol} {interval}: loaded {len(df):,} candles from cache")
+            try:
+                if path.endswith(".parquet"):
+                    df = pd.read_parquet(path)
+                else:
+                    df = pd.read_csv(path)
+            except Exception as e:
+                print(f"  {symbol}: cache read error ({e}), re-downloading...")
+                df = pd.DataFrame()
             
-            # Check if we need to update (fetch new candles)
-            last_ts = df["timestamp"].max()
-            now_ms = int(time.time() * 1000)
-            gap_hours = (now_ms - last_ts) / 3_600_000
-            
-            if gap_hours > 24:
-                # Fetch new candles and append
-                new_start = datetime.utcfromtimestamp(last_ts / 1000).strftime("%Y-%m-%d")
-                new_end = datetime.utcnow().strftime("%Y-%m-%d")
-                print(f"  Updating: {gap_hours:.0f}h of new data...")
-                
-                new_df = download_klines(symbol, interval, new_start, new_end, verbose=False)
-                if len(new_df) > 0:
-                    df = pd.concat([df, new_df]).drop_duplicates(subset=["timestamp"])
-                    df = df.sort_values("timestamp").reset_index(drop=True)
-                    df.to_parquet(path, index=False)
-                    print(f"  Updated: {len(df):,} total candles")
-            
-            return df
+            if len(df) > 0:
+                print(f"  {symbol} {interval}: loaded {len(df):,} candles from cache")
+                return df
         
         # Full download
         # Get earliest available date from all splits
@@ -258,7 +261,13 @@ class BinanceDataLoader:
         df = download_klines(symbol, interval, start, end)
         
         if len(df) > 0:
-            df.to_parquet(path, index=False)
+            try:
+                df.to_parquet(path, index=False)
+            except ImportError:
+                # No pyarrow — save as CSV instead
+                csv_path = path.replace(".parquet", ".csv")
+                df.to_csv(csv_path, index=False)
+                print(f"  Saved as CSV (install pyarrow for faster loading)")
         
         return df
     
@@ -294,7 +303,13 @@ class BinanceDataLoader:
         if not os.path.exists(path):
             return pd.DataFrame()
         
-        df = pd.read_parquet(path)
+        try:
+            if path.endswith(".parquet"):
+                df = pd.read_parquet(path)
+            else:
+                df = pd.read_csv(path)
+        except Exception:
+            return pd.DataFrame()
         
         if split not in SPLITS:
             return df
